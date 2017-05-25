@@ -3,7 +3,7 @@ import numpy as np
 import csv as csv
 import h5py
 from Public_modules.Utilities import *
-
+sys.path.append('../')
 ######################################################
 ## load folder_name, batch names
 ######################################################
@@ -11,14 +11,14 @@ print ('Transforms the maxquant peptide files into the input for QTL processing'
 
 #parameters_file=sys.argv[1]
 #norm_method=sys.argv[2]
-parameters_file='./parameters_quantification'
+parameters_file='../parameters_quantification'
 norm_method='qnorm'
 folder_dest,folder_data,batch_name_tmt,file_protein_quantification,line_keyword_exclude_lines,line_keyword_exclude_batch=read_parameters(parameters_file)
 
 field_data='Reporter intensity corrected'
 field_meta_pep=np.array(['Leading razor protein','Sequence','Proteins','Gene names', 'Unique (Groups)','PEP','Score','Reverse', 'Potential contaminant','Start position'])
 field_meta_pro=np.array(['Majority protein IDs', 'Protein IDs','Peptide IDs','Peptide counts (razor+unique)','Gene names', 'Peptide is razor','Mol. weight [kDa]','Only identified by site'])
- 
+
 #==============================================================================
 #==============================================================================
 # # ### read data in dictionary
