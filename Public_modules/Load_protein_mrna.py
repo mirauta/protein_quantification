@@ -2,33 +2,18 @@ import sys
 import numpy as np
 import csv as csv
 import h5py
-from limix.util import *
-sys.path.append('../')
-from Public_modules.Utilities import *
 import pandas
-import matplotlib.pyplot as plt
-def load_protein_mrna( filter_genes="_genes_filtered",filter_lines="_lines_filtered_unique",field_data="Reporter intensity corrected_regbatch",only_protein=False):
-    parameters_file='../parameters_quantification'
-    
-#    folder_dest,folder_data,batch_name_tmt,file_protein_quantification=read_parameters(parameters_file)
-    folder_dest,folder_data,batch_name_tmt,file_protein_quantification,line_keyword_exclude_lines,line_keyword_exclude_batch=read_parameters(parameters_file)
+from Utilities import *
 
+def load_protein_mrna(file_protein_quantification='',folder_data='', filter_genes="_genes_filtered",filter_lines="_lines_filtered_unique",field_data="Reporter intensity corrected_regbatch",only_protein=False):
 
     data={}
-    data['protein_intensity']=pandas.read_table(folder_dest+file_protein_quantification+"_protein_"+field_data+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
-    data['peptide_intensity']=pandas.read_table(folder_dest+file_protein_quantification+"_peptide_"+field_data+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
-    try:
-        data['protein_intensity_peer']=pandas.read_table(folder_dest+file_protein_quantification+"_protein_"+field_data+"_peer"+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
-    except:
-        print ("could not load peer data")
-    data['peptide_meta']=pandas.read_table(folder_dest+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose() 
-    data['peptide_protein']=pandas.read_table(folder_dest+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose()
-    data['protein_meta']=pandas.read_table(folder_dest+file_protein_quantification+"_protein_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose()
-    try:
-        data['line_meta']=pandas.read_table(folder_dest+file_protein_quantification+"_lines_metadata_peer"+filter_lines+".txt",sep='\t').set_index('lines',drop=False)
-    except:
-        data['line_meta']=pandas.read_table(folder_dest+file_protein_quantification+"_lines_metadata"+filter_lines+".txt",sep='\t').set_index('lines',drop=False)
-    
+    data['protein_intensity']=pandas.read_table(folder_data+file_protein_quantification+"_protein_"+field_data+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
+    data['peptide_intensity']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_"+field_data+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
+    data['peptide_meta']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose() 
+    data['peptide_protein']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose()
+    data['protein_meta']=pandas.read_table(folder_data+file_protein_quantification+"_protein_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose()
+    data['line_meta']=pandas.read_table(folder_data+file_protein_quantification+"_lines_metadata"+filter_lines+".txt",sep='\t').set_index('lines',drop=False)
     data['batch_mat']=pandas.DataFrame(data=np.vstack([data['line_meta']['batch']==tmt for tmt in np.unique(data['line_meta']['batch'])]).astype(float).T,\
         columns=np.unique(data['line_meta']['batch']),  index=data['line_meta']['lines']) 
     if only_protein:
