@@ -1,6 +1,7 @@
 
 import sys
 sys.path.append('../Public_modules/')
+sys.path.append('/nfs/research2/stegle/users/mirauta/scripts/Various/peer/build/python/')
 from Utilities import *
 from Load_protein_mrna import *
 import scipy.cluster.hierarchy as hier
@@ -12,11 +13,11 @@ from limix.utils import *
 
 folder_data='/nfs/research2/hipsci/processed_data/proteomics/'
 file_protein_quantification='hipsci.proteomics.maxquant.uniprot.TMT_batch_14.20170517'
-filter_genes=''
+filter_genes='_genes_filtered'
 filter_lines="_lines_filtered_unique"
-
+field_data="Reporter intensity corrected_regbatch"
 data=load_protein_mrna( filter_genes=filter_genes,filter_lines=filter_lines,file_protein_quantification=file_protein_quantification,\
-        folder_data=folder_data,field_data="Reporter intensity corrected_regbatch",only_protein=True)
+        folder_data=folder_data,field_data=field_data,only_protein=True)
 
 ## Run PEER ### Input matrix: N rows and G columns, where N is the number of samples, and G is the number of genes.
 
@@ -24,7 +25,10 @@ data=load_protein_mrna( filter_genes=filter_genes,filter_lines=filter_lines,file
 model = peer.PEER()
 #model.setCovariates(Cov) # N x C matrix
 
-model.setPhenoMean(data['protein_intensity'].values[:,np.isfinite(np.sum(data['protein_intensity'].values,0))][:,:1000])
+expr=np.log(np.copy(data['protein_intensity'].values))
+expr[~np.isfinite(expr)]=0
+#model.setPhenoMean(data['protein_intensity'].values[:,np.isfinite(np.sum(data['protein_intensity'].values,0))][:,:1000])
+model.setPhenoMean(expr)
 model.setAdd_mean(True)
 # To infer K hidden confounders, define K and number of iterations
 K=10;model.setNk(int(K)) # or PEER_setNk(model,number_of_covs)
@@ -32,8 +36,21 @@ model.setNmax_iterations(1000)
 model.update()
 factors = model.getX(); weights = model.getW(); precision = model.getAlpha(); expr_peer = model.getResiduals()
 
-write_data( folder_data+file_protein_quantification+"_lines_metadata2"+filter_lines+".txt",        mat=np.hstack([data['line_meta'].values,factors]),\
+write_data( folder_data+file_protein_quantification+"_lines_metadata_peer"+filter_lines+".txt",        mat=np.hstack([data['line_meta'].values,factors]),\
         header= np.hstack([data['line_meta'].columns.values,['peer_'+str(i) for i in np.arange(factors.shape[1])]]),delim='\t')
+
+
+
+write_data(folder_data+file_protein_quantification+"_protein_"+field_data+"_log_peer"+filter_lines+filter_genes+".txt",\
+        mat0= data['protein_intensity'].columns.values[:,None], mat= model.getResiduals(),\
+        header=np.hstack(["feature_id", data['protein_intensity'].index]),delim='\t')
+
+write_data(folder_data+file_protein_quantification+"_protein_"+field_data+"_log"+filter_lines+filter_genes+".txt",\
+        mat0= data['protein_intensity'].columns.values[:,None], mat=np.log(np.copy(data['protein_intensity'].values)),\
+        header=np.hstack(["feature_id", data['protein_intensity'].index]),delim='\t')
+
+
+
 
 sys.exit()
 import matplotlib.pyplot as plt
