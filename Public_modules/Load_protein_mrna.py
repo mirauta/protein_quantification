@@ -3,47 +3,46 @@ import numpy as np
 import csv as csv
 import h5py
 import pandas
-from Utilities import *
+#from Utilities import *
 
-def load_protein_mrna(file_protein_quantification='',folder_data='', filter_genes="_genes_filtered",filter_lines="_lines_filtered_unique",field_data="Reporter intensity corrected_regbatch",only_protein=False):
-
+def load_protein_mrna(file_protein_quantification='',folder_data='', filter_genes="_genes_filtered",filter_lines="_lines_filtered_unique",field_data="Reporter intensity corrected_regbatch",\
+                      only_protein=False,folder_data_rna='',file_rna_quantification=''):
+#    folder_data_rna='/Users/mirauta/data/RNA/hipsci/'
+#    file_rna_quantification='HipSci.featureCounts.genes.counts.stranded.tsv_counts.tsv'
+#    folder_data='/Users/mirauta/data/MS/hipsci/TMT/phenotypes/'
+#    file_protein_quantification='hipsci.proteomics.maxquant.uniprot.TMT_batch_14.20170517'
+#    field_data='Reporter intensity corrected_regbatch'
+#    filter_lines='_lines_filtered_unique'
+#    filter_genes='_genes_filtered'
     data={}
     data['protein_intensity']=pandas.read_table(folder_data+file_protein_quantification+"_protein_"+field_data+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
     data['peptide_intensity']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_"+field_data+filter_lines+filter_genes+".txt",sep='\t',index_col=0).transpose()
-    data['peptide_meta']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose() 
-    data['peptide_protein']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose()
-    data['protein_meta']=pandas.read_table(folder_data+file_protein_quantification+"_protein_metadata"+filter_genes+".txt",sep='\t').set_index('gene_name',drop=False).transpose()
+    data['peptide_meta']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('ensembl_gene_id',drop=False).transpose() 
+    data['peptide_protein']=pandas.read_table(folder_data+file_protein_quantification+"_peptide_metadata"+filter_genes+".txt",sep='\t').set_index('ensembl_gene_id',drop=False).transpose()
+    data['protein_meta']=pandas.read_table(folder_data+file_protein_quantification+"_protein_metadata"+filter_genes+".txt",sep='\t').set_index('ensembl_gene_id',drop=False).transpose()
     data['line_meta']=pandas.read_table(folder_data+file_protein_quantification+"_lines_metadata"+filter_lines+".txt",sep='\t').set_index('lines',drop=False)
     data['batch_mat']=pandas.DataFrame(data=np.vstack([data['line_meta']['batch']==tmt for tmt in np.unique(data['line_meta']['batch'])]).astype(float).T,\
         columns=np.unique(data['line_meta']['batch']),  index=data['line_meta']['lines']) 
     if only_protein:
         return data
-
-    rna_marc = h5py.File('/Users/mirauta/Data/RNA/hipsci/rna_seq_counts_salmon_genes_2304.h5','r')
-    lines=np.unique(rna_marc['meta/lines'][:].astype('U'))
     
-    rna_lines=rna_marc['meta/lines'][:].astype('U')
-    index=np.unique(rna_lines,return_index=1)[1]
-    temp_rna_counts=rna_marc['data/counts'][:][index]
-    rna_lines=rna_lines[index]
-    rna_all_genes=np.array([temp[1] for temp   in rna_marc['meta/genes'][:]]).astype('U')
-    temp=np.unique(rna_all_genes,return_counts=1);temp
-     
-    common_lines=np.intersect1d(data['protein_intensity'].index,rna_lines)
-    common_genes=np.intersect1d(data['peptide_meta'].transpose()['gene_name'],np.intersect1d(data['protein_meta'].transpose()['gene_name'],rna_all_genes)); print (common_genes.shape)
+    data['rna_counts']=pandas.read_table(folder_data_rna+file_rna_quantification,sep='\t',index_col=0).transpose()
+    data['rna_counts'].index=np.array([l.split('/')[3].split('.')[0]for l in data['rna_counts'].index])
     
-    temp_rna_counts=np.array([temp_rna_counts[rna_lines ==ll][0] for ll in common_lines]).T; print (temp_rna_counts.shape) 
-    temp_rna_counts=np.array([d/d.sum()*temp_rna_counts[:,0].sum() for d in temp_rna_counts.T]).T; print (temp_rna_counts.shape) 
-    #data['rna_counts']=np.array([temp_rna_counts[ rna_all_genes ==g].sum(0) for g in  common_genes])
-    data['rna_counts']=pandas.DataFrame(data=np.array([temp_rna_counts[ rna_all_genes ==g].sum(0) for g in  common_genes]).T,\
-        index=common_lines,  columns=common_genes)
-     
+    common_lines=np.sort(np.intersect1d(data['protein_intensity'].index,data['rna_counts'].index)); print (common_lines.shape)
+    diff_lines=np.setdiff1d(data['protein_intensity'].index,data['rna_counts'].index); print (diff_lines.shape)
+    common_genes=np.sort(np.intersect1d(data['peptide_meta'].transpose()['ensembl_gene_id'],\
+                                        np.intersect1d(data['protein_meta'].transpose()['ensembl_gene_id'],data['rna_counts'].columns.values))); print (common_genes.shape)
+    
+    
     ## select common lines                       
-    for x in ['protein_intensity','peptide_intensity', 'line_meta','batch_mat' ]:
-        temp=data[x].transpose()
-        data[x]=pandas.DataFrame(data=np.array([temp[ll] for ll in common_lines]), index=common_lines,  columns=data[x].columns.values)                   
+    for x in ['protein_intensity','peptide_intensity', 'line_meta','batch_mat','rna_counts' ]:
+        data[x]=data[x].transpose()[common_lines].transpose()
+    #    
+    #    temp=data[x].transpose()
+    #    data[x]=pandas.DataFrame(data=np.array([temp[ll] for ll in common_lines]), index=common_lines,  columns=data[x].columns.values)                   
     
-    for x in ['protein_meta','peptide_meta', 'peptide_protein']:
+    for x in ['protein_meta','peptide_meta', 'peptide_protein','rna_counts']:
         data[x]=data[x].transpose()[np.in1d(data[x].transpose().index,common_genes)].transpose()
     
     return data
