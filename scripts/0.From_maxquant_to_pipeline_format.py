@@ -4,6 +4,7 @@ import csv as csv
 import h5py
 sys.path.append('../')
 from Public_modules.Utilities import *
+import pandas
 
 ######################################################
 ## load folder_name, batch names
@@ -17,6 +18,7 @@ norm_method='qnorm'
 folder_dest,folder_data,batch_name_tmt,file_protein_quantification,line_keyword_exclude_lines,line_keyword_exclude_batch=read_parameters(parameters_file)
 
 field_data='Reporter intensity corrected'
+field_data2='Reporter intensity corrected'+'_regbatch'
 field_meta_pep=np.array(['Leading razor protein','Sequence','Proteins','Gene names', 'Unique (Groups)','PEP','Score','Reverse', 'Potential contaminant','Start position'])
 field_meta_pro=np.array(['Majority protein IDs', 'Protein IDs','Peptide IDs','Peptide counts (razor+unique)','Gene names', 'Peptide is razor','Mol. weight [kDa]','Only identified by site'])
 
@@ -59,7 +61,8 @@ temp=(np.nansum(pepdata['data'][field_data]>0,1))
 #temp2=(np.nansum(prodata['data'][field_data],1))
 prodata['data']['valid_lines']=(temp<=np.nanmedian(temp)*1.25)&(temp>=np.nanmedian(temp)*0.75) &\
                                np.all(np.array([np.array([field_filter not in l for field_filter in line_keyword_exclude_lines]) for l in prodata['data']['lines']]),1)&\
-                               np.all(np.array([np.array([field_filter not in l for field_filter in line_keyword_exclude_batch]) for l in prodata['data']['batch']]),1)
+                               np.all(np.array([np.array([field_filter not in l for field_filter in line_keyword_exclude_batch]) for l in prodata['data']['batch']]),1)&\
+                               np.array(['HPSI' in l for l in prodata['data']['lines']])
     
              
 #==============================================================================
@@ -91,7 +94,8 @@ def mergeid(key1=None,key2=None):
 #prodata['meta']['index_annotation']=mergeid(key1=annotation['annotation_protein'],key2=prodata['meta']['Lead protein'])
 #pepdata['meta']['index_annotation']=mergeid(key1=annotation['annotation_protein'],key2=pepdata['meta']['Leading razor protein'])
 
-temp=load_data(file_name="/Users/mirauta/Data/Annotation/Ensembl_37.75/Homo_sapiens.GRCh37.75_gene.gtf",delimiter='\t', quotechar='"',skip_before=0)[1]
+tempi=load_data(file_name="/Users/mirauta/Data/Annotation/Ensembl_37.75/Homo_sapiens.GRCh37.75.gtf",delimiter='\t', quotechar='"',skip_before=5)[1]
+temp=np.array([t[tempi[2]=='gene']for t in tempi])
 annotation={}
 annotation['chromosome']=temp[0];
 annotation['annotation_gene']=np.array([g.split(";")[1].replace('gene_name','').replace(' ','').replace('"','') for g in temp[8]])
@@ -139,34 +143,66 @@ for x in [prodata,pepdata]:
 #==============================================================================
 # # 
 #==============================================================================
-#==============================================================================
+'''
+rank normalise lines
+'''
+#field_data3=field_data2+'_qnorm'
+#for x in [prodata,pepdata]:
+#    x['data'][field_data3]=np.array([transform_vector_qnorm(y, method='qnorm') for y in     x['data'][field_data2].T]).T
+#    
+import matplotlib.pyplot as plt
+#
+#L=35
+for temp in [pepdata['data'],prodata['data']]:
+    xref=temp['Reporter intensity corrected'][prodata['data']['valid_lines']]\
+             [np.argmax(np.nansum(temp['Reporter intensity corrected'][prodata['data']['valid_lines']]>0,1))]
+    temp['Reporter intensity corrected_ranknorm']=\
+        np.array([rank_transform_new(x=temp['Reporter intensity corrected'][i],\
+        ref=xref)    for i in np.arange(temp['Reporter intensity corrected'].shape[0])])
+    
+#plt.figure(figsize=(7,14))
+#for i in np.arange(L):
+#    plt.subplot(L,1,i+1)
+#    plt.hist([np.log(temp[i][temp[i]>0]),np.log(temp2[i][temp2[i]>0])],bins=20)
+#    plt.xlim(5,20)
+#    
+#plt.show()
+
+#plt.xlim(4,25)
+#sys.exit()
+
 '''
 remove batch effect
 '''
-for x in [prodata,pepdata]:
-    x['data'][field_data][x['data'][field_data]==0]=np.nan
+for field_data in ['Reporter intensity corrected','Reporter intensity corrected_ranknorm']:
+    for x in [prodata,pepdata]:
+        x['data'][field_data][x['data'][field_data]==0]=np.nan
        
-prodata['data'][field_data+'_regbatch']=np.copy(prodata['data'][field_data])
-pepdata['data'][field_data+'_regbatch']=np.copy(pepdata['data'][field_data])
-for x in [prodata,pepdata]:
-    medianpeptides=np.nanmedian(1+x['data'][field_data],0)
-    for b in np.unique(prodata['data']['batch']):
-        index=np.where(prodata['data']['batch']==b)[0]
-        if index.shape[0]>3:
-            print (b)
-            x['data'][field_data+'_regbatch'][index]=x['data'][field_data][index]/np.nanmedian(1+x['data'][field_data][index],0)[None]*\
-             medianpeptides[None]
+    prodata['data'][field_data+'_regbatch']=np.copy(prodata['data'][field_data])
+    pepdata['data'][field_data+'_regbatch']=np.copy(pepdata['data'][field_data])
+    for x in [prodata,pepdata]:
+        medianpeptides=np.nanmedian(1+x['data'][field_data],0)
+        for b in np.unique(prodata['data']['batch']):
+            index=np.where(prodata['data']['batch']==b)[0]
+            if index.shape[0]>3:
+                print (b)
+                x['data'][field_data+'_regbatch'][index]=x['data'][field_data][index]/\
+                 np.nanmedian(1+x['data'][field_data][index],0)[None]*\
+                 medianpeptides[None]
+    
 
-field_data2=field_data+'_regbatch'
-
-
+for field_data in ['Reporter intensity corrected'+'_regbatch','Reporter intensity corrected_ranknorm'+'_regbatch']:
+    temp=pepdata['data'][field_data]
+    plt.hist([np.log(temp[i][temp[i]>0])for i in [1,5,10,15,20,25]],bins=10,normed=1)
+    plt.show()
 '''
 generate qnorm phenotype
 '''
  
-field_data3=field_data2+'_qnorm'
-for x in [prodata,pepdata]:
-    x['data'][field_data3]=np.array([transform_vector_qnorm(y, method='qnorm') for y in     x['data'][field_data2].T]).T
+for field_data in ['Reporter intensity corrected','Reporter intensity corrected_ranknorm']:
+    field_data3=field_data+'_regbatch'+'_qnorm'
+    for x in [prodata,pepdata]:
+        x['data'][field_data3]=np.array([transform_vector_qnorm(y, method='qnorm') for y in     x['data'][field_data+'_regbatch'].T]).T
     
 #sys.exit()
 
@@ -176,7 +212,7 @@ select independent samples
 
 
 prodata['data']['donor_valid_lines']=np.array([l.split('-')[-1].split('_')[0] for l in prodata['data']['lines'][prodata['data']['valid_lines']]])
-prodata['data']['countpep_valid_lines']=np.nansum(pepdata['data'][field_data2][prodata['data']['valid_lines']]>0,1)
+prodata['data']['countpep_valid_lines']=np.nansum(pepdata['data'][field_data+'_regbatch'][prodata['data']['valid_lines']]>0,1)
 prodata['data']['select_valid_lines']=np.zeros(len(prodata['data']['donor_valid_lines']),dtype='bool')
 for d in np.unique(prodata['data']['donor_valid_lines']):
     prodata['data']['select_valid_lines'][prodata['data']['donor_valid_lines']==d]=\
@@ -198,18 +234,21 @@ prodata['data']['valid_lines_independent'][np.in1d(prodata['data']['lines'],rela
 
 
        
+
 '''
-select genes by # detected lines
+select genes by # detected lines and not overlaping snps
 '''
-prodata['data']['at_least_x_lines']=np.nansum(prodata['data'][field_data2][prodata['data']['valid_lines_independent']]>0,0)>prodata['data']['valid_lines_independent'].sum()*0.95
+pepdata['data']['peptide_overlap_snp']=pandas.read_table(folder_data+\
+"phenotypes/hipsci.proteomics.maxquant.uniprot.TMT_batch_14.20170517_peptide_lines_filtered_unique_overlap_peptide_snp.txt",sep='\t').set_index('feature_id',drop=0)
+    
+prodata['data']['at_least_x_lines']=np.nansum(prodata['data'][field_data+'_regbatch'][prodata['data']['valid_lines_independent']]>0,0)>(prodata['data']['valid_lines_independent'].sum()*0.66)
 
 pepdata['data']['at_least_x_lines']=np.in1d(pepdata['meta']['Leading razor protein'],prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']])&\
-                                   (np.nansum(pepdata['data'][field_data2][prodata['data']['valid_lines_independent']]>0,0)>prodata['data']['valid_lines_independent'].sum()*0.75)
-                                   
-                                   
+                                   (np.nansum(pepdata['data'][field_data+'_regbatch'][prodata['data']['valid_lines_independent']]>0,0)>prodata['data']['valid_lines_independent'].sum()*0.33)&\
+                                   np.in1d(pepdata['meta']['Sequence'],pepdata['data']['peptide_overlap_snp']['feature_id'][pepdata['data']['peptide_overlap_snp']['overlap_snp']==0])
+                                            
 '''
 write data
-
 '''
 #==============================================================================
 # # write all
@@ -227,11 +266,13 @@ write_data(folder_dest+file_protein_quantification+"_lines_metadata.txt", \
            mat=np.array([prodata['data'][key] for key in line_corresponding_fields]).T, header= line_corresponding_fields ,delim='\t')
 
 
-write_data(folder_dest+file_protein_quantification+"_protein_"+field_data2+".txt",\
-          mat0=prodata['meta']['Lead protein'][:,None],  mat=prodata['data'][field_data2].T,header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
+for field_data in ['Reporter intensity corrected','Reporter intensity corrected_ranknorm']:
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+'_regbatch'+".txt",\
+          mat0=prodata['meta']['Lead protein'][:,None],  mat=prodata['data'][field_data+'_regbatch'].T,\
+                      header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
 
-write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data2+".txt",\
-          mat0=pepdata['meta']['Sequence'][:,None], mat=pepdata['data'][field_data2].T,header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+'_regbatch'+".txt",\
+          mat0=pepdata['meta']['Sequence'][:,None], mat=pepdata['data'][field_data+'_regbatch'].T,header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
 
 #==============================================================================
 #==============================================================================
@@ -253,46 +294,84 @@ write_data(folder_dest+file_protein_quantification+"_lines_metadata_lines_filter
 # 
 #==============================================================================
 ''' indepednent lines and all genes'''
-write_data(folder_dest+file_protein_quantification+"_protein_"+field_data2+"_lines_filtered_unique.txt",\
-                   mat0=prodata['meta']['Lead protein'][:,None],\
-                   mat=prodata['data'][field_data2][prodata['data']['valid_lines_independent']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+for field_data in ['Reporter intensity corrected','Reporter intensity corrected_ranknorm']:
 
-write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data2+"_lines_filtered_unique.txt",\
-                   mat0=pepdata['meta']['Sequence'][:,None],\
-                   mat=pepdata['data'][field_data2][prodata['data']['valid_lines_independent']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    #no processing
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+".txt",\
+                       mat0=prodata['meta']['Lead protein'][:,None],\
+                       mat=prodata['data'][field_data][prodata['data']['valid_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+".txt",\
+                       mat0=pepdata['meta']['Sequence'][:,None],\
+                       mat=pepdata['data'][field_data][prodata['data']['valid_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+"_lines_filtered_unique.txt",\
+                       mat0=prodata['meta']['Lead protein'][:,None],\
+                       mat=prodata['data'][field_data][prodata['data']['valid_lines_independent']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+"_lines_filtered_unique.txt",\
+                       mat0=pepdata['meta']['Sequence'][:,None],\
+                       mat=pepdata['data'][field_data][prodata['data']['valid_lines_independent']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+"_genes_filtered.txt",\
+                       mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
+                       mat=prodata['data'][field_data+'_regbatch'][prodata['data']['valid_lines']][:,prodata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines']]]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+"_genes_filtered.txt",\
+                       mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
+                       mat=pepdata['data'][field_data+'_regbatch'][prodata['data']['valid_lines']][:,pepdata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines']]]),delim='\t')
+      
+    
+for field_data in ['Reporter intensity corrected','Reporter intensity corrected_ranknorm']:
+    
+    #regbatch
+    ''' selected genes'''
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+'_regbatch'+"_genes_filtered.txt",\
+                       mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
+                       mat=prodata['data'][field_data+'_regbatch'][prodata['data']['valid_lines']] [:,prodata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines']]]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+'_regbatch'+"_genes_filtered.txt",\
+                       mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
+                       mat=pepdata['data'][field_data+'_regbatch'][prodata['data']['valid_lines']] [:,pepdata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines']] ]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+'_regbatch'+"_lines_filtered_unique.txt",\
+                       mat0=prodata['meta']['Lead protein'][:,None],\
+                       mat=prodata['data'][field_data+'_regbatch'][prodata['data']['valid_lines_independent']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+'_regbatch'+"_lines_filtered_unique.txt",\
+                       mat0=pepdata['meta']['Sequence'][:,None],\
+                       mat=pepdata['data'][field_data+'_regbatch'][prodata['data']['valid_lines_independent']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    
 
-''' indepednent lines and selected genes'''
-write_data(folder_dest+file_protein_quantification+"_protein_"+field_data2+"_lines_filtered_unique_genes_filtered.txt",\
-                   mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
-                   mat=prodata['data'][field_data2][prodata['data']['valid_lines_independent']][:,prodata['data']['at_least_x_lines']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    ''' indepednent lines and selected genes'''
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data+'_regbatch'+"_lines_filtered_unique_genes_filtered.txt",\
+                       mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
+                       mat=prodata['data'][field_data+'_regbatch'][prodata['data']['valid_lines_independent']][:,prodata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data+'_regbatch'+"_lines_filtered_unique_genes_filtered.txt",\
+                       mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
+                       mat=pepdata['data'][field_data+'_regbatch'][prodata['data']['valid_lines_independent']][:,pepdata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
+    
+    
+    write_data(folder_dest+file_protein_quantification+"_protein_"+field_data3+"_lines_filtered_unique_genes_filtered.txt",\
+                       mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
+                       mat=prodata['data'][field_data3][prodata['data']['valid_lines_independent']] [:,prodata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']] ]),delim='\t')
+    
+    write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data3+"_lines_filtered_unique_genes_filtered.txt",\
+                       mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
+                       mat=pepdata['data'][field_data3][prodata['data']['valid_lines_independent']] [:,pepdata['data']['at_least_x_lines']].T,\
+                       header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']] ]),delim='\t')
 
-write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data2+"_lines_filtered_unique_genes_filtered.txt",\
-                   mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
-                   mat=pepdata['data'][field_data2][prodata['data']['valid_lines_independent']][:,pepdata['data']['at_least_x_lines']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']]]),delim='\t')
-
-write_data(folder_dest+file_protein_quantification+"_protein_"+field_data3+"_lines_filtered_unique_genes_filtered.txt",\
-                   mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
-                   mat=prodata['data'][field_data3][prodata['data']['valid_lines_independent']] [:,prodata['data']['at_least_x_lines']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']] ]),delim='\t')
-
-write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data3+"_lines_filtered_unique_genes_filtered.txt",\
-                   mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
-                   mat=pepdata['data'][field_data3][prodata['data']['valid_lines_independent']] [:,pepdata['data']['at_least_x_lines']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'][prodata['data']['valid_lines_independent']] ]),delim='\t')
-
-''' selected genes'''
-write_data(folder_dest+file_protein_quantification+"_protein_"+field_data2+"_genes_filtered.txt",\
-                   mat0=prodata['meta']['Lead protein'][prodata['data']['at_least_x_lines']][:,None],\
-                   mat=prodata['data'][field_data2] [:,prodata['data']['at_least_x_lines']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines']]),delim='\t')
-
-write_data(folder_dest+file_protein_quantification+"_peptide_"+field_data2+"_genes_filtered.txt",\
-                   mat0=pepdata['meta']['Sequence'][pepdata['data']['at_least_x_lines']][:,None],\
-                   mat=pepdata['data'][field_data2] [:,pepdata['data']['at_least_x_lines']].T,\
-                   header=np.hstack(["feature_id",prodata['data']['lines'] ]),delim='\t')
-
-vcf.Reader(fsock=None, filename=None, compressed=None, prepend_chr=False, strict_whitespace=False, encoding='ascii')
